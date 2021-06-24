@@ -23,15 +23,9 @@ namespace OCA\Encryption\Tests\Command;
 
 use OC\Files\Filesystem;
 use OC\Files\View;
+use OCA\Encryption\AppInfo\Application;
 use OCA\Encryption\Command\FixEncryptedVersion;
-use OCA\Encryption\Crypto\Crypt;
-use OCA\Encryption\KeyManager;
-use OCA\Encryption\Session;
-use OCA\Encryption\Util;
-use OCP\Files\IRootFolder;
-use OCP\IUserManager;
 use Symfony\Component\Console\Tester\CommandTester;
-use OCA\Encryption\Users\Setup;
 use Test\TestCase;
 use Test\Traits\UserTrait;
 
@@ -61,53 +55,26 @@ class FixEncryptedVersionTest extends TestCase {
 	}
 
 	public static function tearDownAfterClass(): void {
-		parent::tearDownAfterClass();
-		\OC\Files\Filesystem::clearMounts();
 		\OC::$server->getConfig()->deleteAppValue('core', 'encryption_enabled');
 		\OC::$server->getConfig()->deleteAppValue('core', 'default_encryption_module');
 		\OC::$server->getConfig()->deleteAppValues('encryption');
-		Filesystem::getLoader()->removeStorageWrapper("oc_encryption");
+		parent::tearDownAfterClass();
 	}
 
 	public function setUp(): void {
 		parent::setUp();
 
+		$app = \OC::$server->query(Application::class);
+		$encryptionManager = \OC::$server->getEncryptionManager();
+		$this->assertTrue($encryptionManager->isReady());
+
+		\OC_Hook::clear();
+		$app->registerHooks(\OC::$server->getConfig());
+		$app->setUp($encryptionManager);
+
 		$this->userId = $this->getUniqueId('user_');
 
-		$crypt = new Crypt(
-			\OC::$server->getLogger(),
-			\OC::$server->getUserSession(),
-			\OC::$server->getConfig(),
-			\OC::$server->getL10N('encryption')
-		);
-		$encryptionSession = new Session(\OC::$server->getSession());
-		$view = new View("/");
-		$encryptionUtil = new Util(
-			$view,
-			$crypt,
-			\OC::$server->getLogger(),
-			\OC::$server->getUserSession(),
-			\OC::$server->getConfig(),
-			\OC::$server->getUserManager()
-		);
-		$keyManager = new KeyManager(
-			\OC::$server->getEncryptionKeyStorage(),
-			$crypt,
-			\OC::$server->getConfig(),
-			\OC::$server->getUserSession(),
-			$encryptionSession,
-			\OC::$server->getLogger(),
-			$encryptionUtil,
-			\OC::$server->getLockingProvider(),
-		);
-		$userSetup = new Setup(
-			$crypt,
-			$keyManager
-		);
-		$userSetup->setupSystem();
-
 		$this->createUser($this->userId, 'foo12345678');
-		$userSetup->setupUser($this->userId, 'foo12345678');
 		self::loginAsUser($this->userId);
 
 		\OC::$server->getEncryptionManager()->setupStorage();
@@ -128,6 +95,9 @@ class FixEncryptedVersionTest extends TestCase {
 
 	public function tearDown(): void {
 		self::logout();
+		Filesystem::clearMounts();
+		Filesystem::getLoader()->removeStorageWrapper('oc_encryption');
+		\OC_Hook::clear();
 		parent::tearDown();
 	}
 
